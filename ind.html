@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>WebSocket Client with Form</title>
+	</head>
+	<body>
+		<h1>WebSocket Client</h1>
+		<form id="messageForm">
+			<input
+				type="text"
+				id="messageInput"
+				placeholder="Enter your message"
+			/>
+			<button type="submit">Send</button>
+		</form>
+		<div id="messages"></div>
+
+		<script>
+			// Create WebSocket connection
+			const socket = new WebSocket("ws://localhost:3000/ibrahim"); // Change this to your WebSocket server URL
+
+			// Connection opened
+			socket.addEventListener("open", function (event) {
+				console.log("Connected to WebSocket server");
+			});
+
+			// Listen for messages
+			socket.addEventListener("message", function (event) {
+				console.log("Message from server:", event.data);
+				displayMessage(event.data);
+			});
+
+			// Form submission
+			document
+				.getElementById("messageForm")
+				.addEventListener("submit", function (event) {
+					event.preventDefault();
+					const messageInput =
+						document.getElementById("messageInput");
+					const message = messageInput.value;
+					if (message.trim() !== "") {
+						sendMessage(message);
+						messageInput.value = "";
+					}
+				});
+
+			// Function to send a message to the server
+			function sendMessage(message) {
+				socket.send(message);
+				console.log("Message sent:", message);
+			}
+
+			// Function to display a message on the webpage
+			function displayMessage(message) {
+				const messagesContainer = document.getElementById("messages");
+				const messageElement = document.createElement("div");
+				messageElement.textContent = message;
+				messagesContainer.appendChild(messageElement);
+			}
+		</script>
+	</body>
+</html>
