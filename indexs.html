@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Video Call</title>
+		<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+	</head>
+	<body>
+		<h1>Video Call</h1>
+		<video id="localVideo" autoplay muted></video>
+		<video id="remoteVideo" autoplay></video>
+		<button id="startButton">Start Call</button>
+		<button id="hangupButton">Hang Up</button>
+
+		<h1 id="response">hello</h1>
+
+		<script>
+			const localVideo = document.getElementById("localVideo");
+			const remoteVideo = document.getElementById("remoteVideo");
+			const startButton = document.getElementById("startButton");
+			const hangupButton = document.getElementById("hangupButton");
+			let index = 0;
+
+			let localStream;
+			let peerConnection;
+
+			startButton.addEventListener("click", startCall);
+			hangupButton.addEventListener("click", hangUp);
+
+			async function startCall() {
+				startButton.disabled = true;
+				hangupButton.disabled = false;
+
+				try {
+					localStream = await navigator.mediaDevices.getUserMedia({
+						video: true,
+						audio: true,
+					});
+					localVideo.srcObject = localStream;
+
+					peerConnection = new RTCPeerConnection();
+
+					localStream.getTracks().forEach((track) => {
+						peerConnection.addTrack(track, localStream);
+					});
+
+					peerConnection.onicecandidate = (event) => {
+						index++;
+						if (event.candidate) {
+							document.getElementById("response").innerHTML =
+								`${index} => ` +
+								JSON.stringify({
+									iceCandidate: event.candidate,
+								});
+							// Send ICE candidate to the server
+							sendMessage(
+								JSON.stringify({
+									iceCandidate: event.candidate,
+								})
+							);
+						}
+					};
+
+					peerConnection.ontrack = (event) => {
+						remoteVideo.srcObject = event.streams[0];
+					};
+
+					// Create an offer and set it as the local description
+					const offer = await peerConnection.createOffer();
+					await peerConnection.setLocalDescription(offer);
+
+					// Send the offer to the server
+					sendMessage(JSON.stringify({ offer: offer }));
+				} catch (error) {
+					console.error("Error starting the call:", error);
+				}
+			}
+
+			function hangUp() {
+				localStream.getTracks().forEach((track) => {
+					track.stop();
+				});
+				peerConnection.close();
+
+				localVideo.srcObject = null;
+				remoteVideo.srcObject = null;
+
+				startButton.disabled = false;
+				hangupButton.disabled = true;
+			}
+
+			// Create a WebSocket connection to the server
+			const socket = new WebSocket(
+				"wss://010b-113-21-229-144.ngrok-free.app/ibrahim"
+			);
+
+			// Event handler for when the WebSocket connection is opened
+			socket.addEventListener("open", (event) => {
+				console.log("WebSocket connection opened");
+			});
+
+			// Event handler for when a message is received from the server
+			socket.addEventListener("message", (event) => {
+				console.log("Message received from server:", event);
+				document.getElementById("response").innerHTML =
+					`${index} => ` + event.data;
+
+				// Handle the received message as needed
+				handleSignalingData(event.data);
+			});
+
+			// Event handler for when the WebSocket connection is closed
+			socket.addEventListener("close", (event) => {
+				if (event.wasClean) {
+					console.log(
+						`WebSocket connection closed cleanly, code=${event.code}, reason=${event.reason}`
+					);
+				} else {
+					console.error("WebSocket connection abruptly closed");
+				}
+			});
+
+			setInterval(() => {
+				//sendMessage(
+				//	JSON.stringify({
+				//		id: new Date(),
+				//		name: "ibrahim",
+				//	})
+				//);
+			}, 2000);
+
+			// Function to send a message to the server
+			function sendMessage(message) {
+				console.log("\sendMessage\n" + message + "\n\n");
+
+				if (socket.readyState === WebSocket.OPEN) {
+					socket.send(message);
+				} else {
+					console.error(
+						"WebSocket is not open. Cannot send message."
+					);
+				}
+			}
+
+			// Example usage:
+			// Call this function to send a WebRTC signaling message to the server
+			function sendSignalingMessage(data) {
+				console.log("\sendSignalingMessage\n" + data + "\n\n");
+
+				const message = JSON.stringify(data);
+				sendMessage(message);
+			}
+
+			// Function to handle received signaling data and act accordingly
+			function handleSignalingData(data) {
+				console.log("\handleSignalingData\n" + data + "\n\n");
+
+				const message = JSON.parse(data);
+
+				if (message.offer) {
+					// Handle offer message from the remote peer
+					handleOffer(message.offer);
+				} else if (message.answer) {
+					// Handle answer message from the remote peer
+					handleAnswer(message.answer);
+				} else if (message.iceCandidate) {
+					// Handle ICE candidate message from the remote peer
+					handleIceCandidate(message.iceCandidate);
+				}
+			}
+
+			// Function to handle an incoming offer from the remote peer
+			async function handleOffer(offer) {
+				try {
+					console.log("\handleOffer\n" + offer + "\n\n");
+
+					// Set the remote peer's offer as the remote description
+					await peerConnection.setRemoteDescription(
+						new RTCSessionDescription(offer)
+					);
+
+					// Create an answer and set it as the local description
+					const answer = await peerConnection.createAnswer();
+
+					await peerConnection.setLocalDescription(answer);
+
+					// Send the answer to the remote peer
+					sendSignalingMessage({ answer: answer });
+				} catch (error) {
+					console.error("Error handling offer:", error);
+				}
+			}
+
+			// Define the handleIceCandidate function to handle incoming ICE candidates
+			function handleIceCandidate(candidate) {
+				try {
+					console.log("\candidate\n" + candidate + "\n\n");
+
+					if (!peerConnection) {
+						console.error("peerConnection is not initialized.");
+						return;
+					}
+
+					// Add the received ICE candidate to the peer connection
+					peerConnection.addIceCandidate(
+						new RTCIceCandidate(candidate)
+					);
+				} catch (error) {
+					console.error("Error handling ICE candidate:", error);
+				}
+			}
+
+			// In your handleSignalingData function
+			function handleSignalingData(data) {
+				console.log("\handleSignalingData\n" + data + "\n\n");
+
+				const message = JSON.parse(data);
+
+				if (message.offer) {
+					// Handle offer message from the remote peer
+					handleOffer(message.offer);
+				} else if (message.answer) {
+					// Handle answer message from the remote peer
+					handleAnswer(message.answer);
+				} else if (message.iceCandidate) {
+					// Handle ICE candidate message from the remote peer
+					handleIceCandidate(message.iceCandidate);
+				}
+			}
+
+			// Define the handleAnswer function to handle incoming answer messages
+			function handleAnswer(answer) {
+				console.log("\nhandleAnswer\n" + answer + "\n\n");
+				try {
+					if (!peerConnection) {
+						console.error("peerConnection is not initialized.");
+						return;
+					}
+
+					// Set the received answer as the remote description
+					peerConnection.setRemoteDescription(
+						new RTCSessionDescription(answer)
+					);
+				} catch (error) {
+					console.error("Error handling answer:", error);
+				}
+			}
+
+			// Implement functions like handleOffer, handleAnswer, and handleIceCandidate
+			// to process different types of signaling messages and initiate WebRTC actions.
+		</script>
+	</body>
+</html>
